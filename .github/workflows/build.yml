@@ -117,6 +117,7 @@ jobs:
             -o -name "AudioGridderPluginTray" -o -name "AudioGridderPluginTray.exe" \) \
             -not -path "*/CMakeFiles/*" -not -path "*.app/*" -exec cp {} dist/ \;
           ls -la dist
+          echo "::notice title=Binaries (${{ matrix.deps }})::$(ls dist | tr '\n' ' ')"
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
