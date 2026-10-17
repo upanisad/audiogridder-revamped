@@ -110,6 +110,9 @@ jobs:
           # Plugin bundles (VST3, AU) and server/tray app bundles (macOS, Windows)
           find build -type d \( -name "*.vst3" -o -name "*.component" -o -name "*.app" \) \
             -not -path "*/CMakeFiles/*" -prune -exec cp -R {} dist/ \;
+          # Single-file VST3 plugins (Windows)
+          find build -type f -name "*.vst3" -not -path "*.vst3/*" -not -path "*/CMakeFiles/*" \
+            -exec cp {} dist/ \;
           # Plugin shared objects (Linux)
           find build/lib -maxdepth 2 -type f -name "AudioGridder*.so" -exec cp {} dist/ \; 2>/dev/null || true
           # Server and tray executables
