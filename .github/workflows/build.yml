@@ -89,7 +89,19 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 4
+        run: |
+          set -o pipefail
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 4 2>&1 | tee build.log
+
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        # Surface the first compiler/linker errors as annotations, readable
+        # through the API without downloading the full log.
+        run: |
+          grep -E "error [A-Z]+[0-9]+|: error|fatal error|undefined reference|unresolved external" build.log \
+            | grep -v "warning" | sort -u | head -10 \
+            | while IFS= read -r line; do echo "::error::${line:0:900}"; done || true
 
       - name: Collect binaries
         shell: bash
