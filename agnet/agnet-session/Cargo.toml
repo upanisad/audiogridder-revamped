@@ -1,0 +1,12 @@
+[package]
+name = "agnet-session"
+description = "AudioGridder revamped: handshake, heartbeat, riconnessione, jitter buffer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+agnet-proto.workspace = true
+agnet-transport.workspace = true

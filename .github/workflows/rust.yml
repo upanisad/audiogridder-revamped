@@ -1,0 +1,40 @@
+name: Rust
+
+# Step 2.1 of the work plan: build and test the agnet workspace on all three
+# platforms. Independent from the C++ build until step 2.8.
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["agnet/**", ".github/workflows/rust.yml"]
+  pull_request:
+    paths: ["agnet/**", ".github/workflows/rust.yml"]
+  workflow_dispatch:
+
+jobs:
+  rust:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux x86_64, os: ubuntu-24.04 }
+          - { name: macOS arm64, os: macos-14 }
+          - { name: Windows x64, os: windows-2022 }
+    defaults:
+      run:
+        working-directory: agnet
+    steps:
+      - uses: actions/checkout@v4
+      # The toolchain version comes from agnet/rust-toolchain.toml
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Build
+        run: cargo build --workspace --release
+      - name: Test
+        run: cargo test --workspace
