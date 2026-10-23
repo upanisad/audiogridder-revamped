@@ -19,7 +19,8 @@ use agnet_proto::message::{
 };
 use agnet_proto::{Frame, Kind};
 use agnet_transport::{
-    connect, listen, read_frame, write_frame, Endpoint, Listener, Priority, Transport,
+    connect, listen, read_frame, write_frame, Endpoint, Listener, Priority, SocketListener,
+    Transport,
 };
 
 use crate::audio::{
@@ -31,6 +32,9 @@ use crate::handshake::{accept_handshake, ServerInfo};
 use crate::registry::Registry;
 
 const MAX_TOTAL_SAMPLES: usize = 32 * 2048;
+
+/// Dove il server scrive cosa succede (connessioni aperte e chiuse).
+pub type LogFn = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Server di prova: accetta connessioni di controllo e audio, con sessioni e ripresa.
 pub struct BenchServer {
@@ -44,7 +48,14 @@ pub struct BenchServer {
 
 impl BenchServer {
     pub fn start(bind: &Endpoint, grace: Duration) -> io::Result<BenchServer> {
-        let listener = listen(bind)?;
+        BenchServer::start_with(listen(bind)?, grace, Arc::new(|_| {}))
+    }
+
+    pub fn start_with(
+        listener: SocketListener,
+        grace: Duration,
+        log: LogFn,
+    ) -> io::Result<BenchServer> {
         let endpoint = listener.endpoint()?;
         let registry = Arc::new(Registry::new(grace));
         let stop = Arc::new(AtomicBool::new(false));
@@ -56,6 +67,7 @@ impl BenchServer {
             conns.clone(),
             refuse.clone(),
         );
+        log(format!("in ascolto su {}", endpoint_text(&endpoint)));
         let thread = thread::Builder::new()
             .name("agnet-bench-accept".into())
             .spawn(move || {
@@ -67,8 +79,8 @@ impl BenchServer {
                     if rf.load(Ordering::Relaxed) {
                         continue; // server "irraggiungibile": la connessione cade subito
                     }
-                    let (reg, cs) = (reg.clone(), cs.clone());
-                    thread::spawn(move || serve_connection(t, &reg, &cs));
+                    let (reg, cs, log) = (reg.clone(), cs.clone(), log.clone());
+                    thread::spawn(move || serve_connection(t, &reg, &cs, &log));
                 }
             })?;
         Ok(BenchServer {
@@ -119,14 +131,37 @@ impl Drop for BenchServer {
     }
 }
 
+fn endpoint_text(e: &Endpoint) -> String {
+    match e {
+        Endpoint::Tcp(a) => a.to_string(),
+        Endpoint::Local(p) => p.display().to_string(),
+    }
+}
+
 fn serve_connection(
     mut t: Box<dyn Transport>,
     reg: &Registry,
     conns: &Mutex<Vec<Box<dyn Transport>>>,
+    log: &LogFn,
 ) {
-    let Ok(acc) = accept_handshake(&mut t, reg, &ServerInfo::default(), Instant::now()) else {
-        return;
+    let peer = t.peer();
+    let acc = match accept_handshake(&mut t, reg, &ServerInfo::default(), Instant::now()) {
+        Ok(a) => a,
+        Err(e) => {
+            log(format!("{peer}: handshake non riuscito: {e}"));
+            return;
+        }
     };
+    log(format!(
+        "{peer}: canale {:?}, sessione {}{}",
+        acc.hello.channel,
+        acc.session_id,
+        if acc.resumed {
+            " (già esistente)"
+        } else {
+            " (nuova)"
+        }
+    ));
     if let Ok(c) = t.try_clone() {
         conns.lock().unwrap_or_else(|e| e.into_inner()).push(c);
     }
@@ -143,6 +178,7 @@ fn serve_connection(
         ChannelKind::Ui => {}
     }
     reg.detach(acc.session_id, Instant::now());
+    log(format!("{peer}: connessione chiusa"));
 }
 
 fn serve_control(t: &mut Box<dyn Transport>) {
@@ -186,6 +222,8 @@ pub struct BenchConfig {
     pub play: Duration,
     /// Azioni da eseguire a certi istanti della riproduzione (per esempio staccare il cavo).
     pub script: Vec<(Duration, Box<dyn FnOnce() + Send>)>,
+    /// Ogni `Duration` di riproduzione invia un'istantanea delle misure.
+    pub progress: Option<(Duration, mpsc::Sender<BenchReport>)>,
 }
 
 impl BenchConfig {
@@ -200,6 +238,7 @@ impl BenchConfig {
             warmup,
             play,
             script: Vec::new(),
+            progress: None,
         }
     }
 }
@@ -378,6 +417,7 @@ pub fn run_bench(mut cfg: BenchConfig) -> Result<BenchReport, String> {
     let mut play_started = false;
     let mut dropouts0 = 0;
     let mut last_sample = Instant::now();
+    let mut last_progress = Instant::now();
     loop {
         let due = t0 + Duration::from_nanos(period_ns * k);
         let elapsed_ns = period_ns * k;
@@ -428,6 +468,27 @@ pub fn run_bench(mut cfg: BenchConfig) -> Result<BenchReport, String> {
                 let r = shared.rtt_summary();
                 report.rtt_p999_us = report.rtt_p999_us.max(r.p999);
                 report.rtt_max_us = report.rtt_max_us.max(r.max);
+            }
+        }
+        if playing {
+            if let Some((every, tx)) = &cfg.progress {
+                if last_progress.elapsed() >= *every {
+                    last_progress = Instant::now();
+                    let mut snap = report.clone();
+                    snap.dropouts = shared.dropouts() - dropouts0;
+                    snap.delay_blocks = shared.delay_blocks();
+                    snap.recommended_blocks = shared.recommended_delay();
+                    snap.latency_ms =
+                        shared.latency_samples() as f64 * 1000.0 / cfg.sample_rate as f64;
+                    let r = shared.rtt_summary();
+                    snap.rtt_p50_us = r.p50;
+                    snap.rtt_p99_us = r.p99;
+                    snap.rtt_p999_us = r.p999;
+                    snap.rtt_max_us = r.max;
+                    snap.audio_reconnects = client.reconnects();
+                    snap.overruns = shared.overruns();
+                    let _ = tx.send(snap);
+                }
             }
         }
         k += 1;

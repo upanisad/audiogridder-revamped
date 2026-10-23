@@ -1,0 +1,17 @@
+[package]
+name = "agnet-tool"
+description = "AudioGridder revamped: strumento di prova della rete (server e client con audio sintetico)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "agnet-tool"
+path = "src/main.rs"
+
+[dependencies]
+agnet-session.workspace = true
+agnet-transport.workspace = true
+clap.workspace = true
