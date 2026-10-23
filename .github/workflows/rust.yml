@@ -26,7 +26,7 @@ jobs:
       run:
         working-directory: agnet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The toolchain version comes from agnet/rust-toolchain.toml
       - name: Install Rust toolchain
         run: rustup show active-toolchain || rustup toolchain install

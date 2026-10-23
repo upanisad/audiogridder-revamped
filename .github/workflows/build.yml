@@ -38,13 +38,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Cache prebuilt dependencies
         id: deps-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ag-deps/${{ matrix.deps }}
           key: ag-deps-${{ matrix.deps }}-${{ env.AG_DEPS_REF }}
@@ -123,7 +123,7 @@ jobs:
           echo "::notice title=Binaries (${{ matrix.deps }})::$(ls dist | tr '\n' ' ')"
 
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: AudioGridder-revamped-${{ matrix.deps }}-${{ github.sha }}
           path: dist
