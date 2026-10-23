@@ -52,7 +52,12 @@ fn input_for(k: u64, buf: &mut [f32]) {
 /// Il "server": prende i blocchi in uscita, li dimezza e li rimanda indietro.
 fn serve(net: &mut NetSide) {
     while let Some(b) = net.pop_outgoing() {
-        let mut r = net.acquire_incoming().expect("pool in ingresso esaurito");
+        // pool in ingresso esaurito (la DAW non ha ancora consumato): il blocco si scarta,
+        // come farà il thread di rete vero invece di bloccarsi o andare in panico
+        let Some(mut r) = net.acquire_incoming() else {
+            net.recycle_outgoing(b);
+            continue;
+        };
         r.set_shape(b.num_channels, b.num_samples);
         for (o, i) in r.samples_mut().iter_mut().zip(b.samples()) {
             *o = i * 0.5;
