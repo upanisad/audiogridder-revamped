@@ -24,6 +24,8 @@ version = "0.1.0"
 dependencies = [
  "agnet-proto",
  "agnet-transport",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

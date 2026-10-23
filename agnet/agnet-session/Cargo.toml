@@ -10,3 +10,5 @@ repository.workspace = true
 [dependencies]
 agnet-proto.workspace = true
 agnet-transport.workspace = true
+thiserror.workspace = true
+serde.workspace = true
