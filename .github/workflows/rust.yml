@@ -62,3 +62,39 @@ jobs:
           for t in frame message audio; do
             cargo +nightly fuzz run $t -- -max_total_time=30
           done
+
+  netbench:
+    name: Banco di prova di rete (Linux, netem)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: agnet
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Enable tc netem
+        working-directory: .
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y iproute2 linux-modules-extra-$(uname -r) || true
+          sudo modprobe sch_netem
+          sudo tc qdisc replace dev lo root netem delay 1ms
+          sudo tc qdisc del dev lo root
+          echo "netem ok"
+      - name: Scenarios (step 2.6)
+        shell: bash
+        env:
+          AGNET_BENCH_REQUIRE_NETEM: "1"
+          AGNET_BENCH_SECS: "30"
+          AGNET_BENCH_REPORT: ${{ github.workspace }}/netbench.md
+        run: |
+          set -o pipefail
+          status=0
+          cargo test --release -p agnet-session --test netbench -- --ignored --nocapture || status=$?
+          if [ -f "$AGNET_BENCH_REPORT" ]; then
+            cat "$AGNET_BENCH_REPORT" >> "$GITHUB_STEP_SUMMARY"
+            # le annotazioni sono leggibili anche senza permessi di amministratore
+            grep '^|' "$AGNET_BENCH_REPORT" | while read -r l; do echo "::notice::$l"; done
+          fi
+          exit $status

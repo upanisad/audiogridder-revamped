@@ -13,13 +13,12 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use agnet_proto::frame::HEADER_LEN;
 use agnet_proto::message::{decode, encode, ErrorBody, ErrorCode, Event, Hello, Request, Response};
-use agnet_proto::Header;
 use agnet_proto::{Frame, Kind};
 use agnet_transport::{write_frame, Transport};
 
 use crate::error::{error_body, Result, SessionError};
+use crate::frameread::{read_frame_interruptible, READ_POLL};
 use crate::handshake::client_handshake;
 use crate::heartbeat::{Backoff, Heartbeat, HeartbeatAction, DEAD_AFTER, PING_INTERVAL};
 
@@ -27,7 +26,7 @@ use crate::heartbeat::{Backoff, Heartbeat, HeartbeatAction, DEAD_AFTER, PING_INT
 pub type Connector = Box<dyn Fn() -> io::Result<Box<dyn Transport>> + Send>;
 
 /// Un frame `Ping` con questo flag è la risposta, non una richiesta.
-const FLAG_PONG: u8 = 0x02;
+pub(crate) const FLAG_PONG: u8 = 0x02;
 /// Ogni quanto il supervisore controlla heartbeat e scadenze.
 const TICK: Duration = Duration::from_millis(20);
 
@@ -89,6 +88,8 @@ struct Shared {
     /// ID richiesta -> scadenza.
     pending: Mutex<HashMap<u32, Instant>>,
     stop: AtomicBool,
+    /// Token della sessione corrente (vuoto finché non c'è un handshake riuscito).
+    token: Mutex<Vec<u8>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -129,6 +130,7 @@ impl ControlClient {
             next_id: AtomicU32::new(1),
             pending: Mutex::new(HashMap::new()),
             stop: AtomicBool::new(false),
+            token: Mutex::new(Vec::new()),
         });
         let (tx, rx) = mpsc::channel();
         let request_timeout = config.request_timeout;
@@ -156,6 +158,11 @@ impl ControlClient {
             return Err(e);
         }
         Ok(id)
+    }
+
+    /// Token della sessione, da presentare nell'handshake degli altri canali (audio, UI).
+    pub fn session_token(&self) -> Vec<u8> {
+        lock(&self.shared.token).clone()
     }
 
     /// Eventi accumulati finora, senza attendere.
@@ -188,48 +195,6 @@ impl Drop for ControlClient {
 enum ReaderMsg {
     Frame(Frame),
     Closed,
-}
-
-/// Ogni quanto il lettore si sveglia per controllare se deve fermarsi.
-/// (Non ci si affida allo `shutdown` da un'altra maniglia del socket: su Windows
-/// non sblocca sempre una lettura in corso.)
-const READ_POLL: Duration = Duration::from_millis(100);
-
-/// Riempie `buf` tenendo i byte già letti anche se scatta il timeout.
-/// `false` = connessione chiusa, errore o richiesta di fermarsi.
-fn fill(t: &mut Box<dyn Transport>, buf: &mut [u8], closing: &AtomicBool) -> bool {
-    let mut got = 0;
-    while got < buf.len() {
-        if closing.load(Ordering::Relaxed) {
-            return false;
-        }
-        match t.read(&mut buf[got..]) {
-            Ok(0) => return false,
-            Ok(n) => got += n,
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                ) => {}
-            Err(_) => return false,
-        }
-    }
-    true
-}
-
-fn read_frame_interruptible(t: &mut Box<dyn Transport>, closing: &AtomicBool) -> Option<Frame> {
-    let mut head = [0u8; HEADER_LEN];
-    if !fill(t, &mut head, closing) {
-        return None;
-    }
-    let header = Header::decode(&head).ok()?;
-    let mut payload = vec![0u8; header.length as usize];
-    if !fill(t, &mut payload, closing) {
-        return None;
-    }
-    Some(Frame { header, payload })
 }
 
 fn spawn_reader(
@@ -308,6 +273,7 @@ fn supervise(
         let resumed = session_id == Some(welcome.session_id);
         session_id = Some(welcome.session_id);
         hello.session_token = welcome.session_token;
+        *lock(&shared.token) = hello.session_token.clone();
         backoff.reset();
 
         let writer = match conn.try_clone() {

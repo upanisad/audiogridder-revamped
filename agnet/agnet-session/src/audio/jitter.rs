@@ -21,6 +21,15 @@ pub enum DelayMode {
     Fixed(u16),
 }
 
+/// Sintesi dei tempi di andata e ritorno, in microsecondi.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RttSummary {
+    pub p50: u32,
+    pub p99: u32,
+    pub p999: u32,
+    pub max: u32,
+}
+
 /// Raccoglie i tempi di andata e ritorno di ogni blocco.
 /// Vive nel thread di rete (non è realtime): il percentile ordina una copia.
 pub struct RttTracker {
@@ -103,6 +112,22 @@ impl RttTracker {
         v.sort_unstable();
         let idx = ((p * v.len() as f64).ceil() as usize).clamp(1, v.len()) - 1;
         Some(v[idx])
+    }
+
+    /// 50°, 99°, 99,9° percentile e massimo della finestra, con un solo ordinamento.
+    pub fn summary_us(&self) -> Option<RttSummary> {
+        if self.filled == 0 {
+            return None;
+        }
+        let mut v = self.window[..self.filled].to_vec();
+        v.sort_unstable();
+        let at = |p: f64| v[((p * v.len() as f64).ceil() as usize).clamp(1, v.len()) - 1];
+        Some(RttSummary {
+            p50: at(0.5),
+            p99: at(0.99),
+            p999: at(0.999),
+            max: v[v.len() - 1],
+        })
     }
 
     /// Il D minimo che copre il 99,9° percentile più un margine (`None` se

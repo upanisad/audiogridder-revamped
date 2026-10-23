@@ -7,7 +7,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use super::block::{Block, MidiBuf, TransportInfo};
 use super::conceal::{Concealer, PluginKind};
-use super::jitter::{DelayMode, RttTracker};
+use super::jitter::{DelayMode, RttSummary, RttTracker};
 
 #[derive(Debug, Clone)]
 pub struct PipeConfig {
@@ -62,6 +62,10 @@ pub struct AudioShared {
     buffer_blocks: AtomicU32,
     rtt_us: AtomicU32,
     jitter_us: AtomicU32,
+    rtt_p50: AtomicU32,
+    rtt_p99: AtomicU32,
+    rtt_p999: AtomicU32,
+    rtt_max: AtomicU32,
 }
 
 impl AudioShared {
@@ -100,6 +104,16 @@ impl AudioShared {
 
     pub fn recommended_delay(&self) -> u32 {
         self.recommended.load(Relaxed)
+    }
+
+    /// Percentili dei tempi di andata e ritorno nella finestra recente.
+    pub fn rtt_summary(&self) -> RttSummary {
+        RttSummary {
+            p50: self.rtt_p50.load(Relaxed),
+            p99: self.rtt_p99.load(Relaxed),
+            p999: self.rtt_p999.load(Relaxed),
+            max: self.rtt_max.load(Relaxed),
+        }
     }
 
     pub fn snapshot(&self, cpu_load: f32) -> Metrics {
@@ -401,6 +415,12 @@ impl NetSide {
         let s = &self.shared;
         s.rtt_us.store(self.tracker.last_us(), Relaxed);
         s.jitter_us.store(self.tracker.jitter_us(), Relaxed);
+        if let Some(r) = self.tracker.summary_us() {
+            s.rtt_p50.store(r.p50, Relaxed);
+            s.rtt_p99.store(r.p99, Relaxed);
+            s.rtt_p999.store(r.p999, Relaxed);
+            s.rtt_max.store(r.max, Relaxed);
+        }
 
         let block = s.block_samples.load(Relaxed) as u64;
         let max = self.cfg.max_delay.max(1);
