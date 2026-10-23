@@ -37,7 +37,15 @@ jobs:
       - name: Build
         run: cargo build --workspace --release
       - name: Test
-        run: cargo test --workspace
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! cargo test --workspace 2>&1 | tee test.log; then
+            # i log completi richiedono i permessi di amministratore: le annotazioni no
+            grep -E "panicked|FAILED|failed|left:|right:|assertion" test.log | head -20 |
+              while read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
 
   fuzz:
     name: Fuzz agnet-proto
