@@ -14,6 +14,8 @@
 
 #include "Logger.hpp"
 
+#include <chrono>
+
 #ifndef JUCE_WINDOWS
 #include <sys/resource.h>
 #endif

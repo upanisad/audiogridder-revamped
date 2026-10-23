@@ -1,0 +1,131 @@
+name: Rust
+
+# Step 2.1 of the work plan: build and test the agnet workspace on all three
+# platforms. Independent from the C++ build until step 2.8.
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["agnet/**", ".github/workflows/rust.yml"]
+  pull_request:
+    paths: ["agnet/**", ".github/workflows/rust.yml"]
+  workflow_dispatch:
+
+jobs:
+  rust:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux x86_64, os: ubuntu-24.04 }
+          - { name: macOS arm64, os: macos-14 }
+          - { name: Windows x64, os: windows-2022 }
+    defaults:
+      run:
+        working-directory: agnet
+    steps:
+      - uses: actions/checkout@v5
+      # The toolchain version comes from agnet/rust-toolchain.toml
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Build
+        run: cargo build --workspace --release
+      - name: Test
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! cargo test --workspace 2>&1 | tee test.log; then
+            # i log completi richiedono i permessi di amministratore: le annotazioni no
+            grep -E -A3 "panicked|left:|right:" test.log | head -40 |
+              while read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
+
+  fuzz:
+    name: Fuzz agnet-proto
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: Fuzz (30 s per target)
+        working-directory: agnet/agnet-proto
+        run: |
+          for t in frame message audio; do
+            cargo +nightly fuzz run $t -- -max_total_time=30
+          done
+
+  netbench:
+    name: Banco di prova di rete (Linux, netem)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: agnet
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Enable tc netem
+        working-directory: .
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y iproute2 linux-modules-extra-$(uname -r) || true
+          sudo modprobe sch_netem
+          sudo tc qdisc replace dev lo root netem delay 1ms
+          sudo tc qdisc del dev lo root
+          echo "netem ok"
+      - name: Scenarios (step 2.6)
+        shell: bash
+        env:
+          AGNET_BENCH_REQUIRE_NETEM: "1"
+          AGNET_BENCH_SECS: "30"
+          AGNET_BENCH_REPORT: ${{ github.workspace }}/netbench.md
+        run: |
+          set -o pipefail
+          status=0
+          cargo test --release -p agnet-session --test netbench -- --ignored --nocapture || status=$?
+          if [ -f "$AGNET_BENCH_REPORT" ]; then
+            cat "$AGNET_BENCH_REPORT" >> "$GITHUB_STEP_SUMMARY"
+            # le annotazioni sono leggibili anche senza permessi di amministratore
+            grep '^|' "$AGNET_BENCH_REPORT" | while read -r l; do echo "::notice::$l"; done
+          fi
+          exit $status
+
+  tool:
+    name: agnet-tool ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: build statica (musl), parte su qualunque distribuzione x86_64
+          - { name: Linux x86_64, os: ubuntu-24.04, target: x86_64-unknown-linux-musl, file: agnet-tool, artifact: agnet-tool-linux-x86_64 }
+          - { name: macOS arm64, os: macos-14, target: aarch64-apple-darwin, file: agnet-tool, artifact: agnet-tool-macos-arm64 }
+          - { name: Windows x64, os: windows-2022, target: x86_64-pc-windows-msvc, file: agnet-tool.exe, artifact: agnet-tool-windows-x64 }
+    defaults:
+      run:
+        working-directory: agnet
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install target
+        shell: bash
+        run: |
+          rustup target add ${{ matrix.target }}
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then sudo apt-get install -y musl-tools; fi
+      - name: Build
+        run: cargo build --release -p agnet-tool --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact }}
+          path: agnet/target/${{ matrix.target }}/release/${{ matrix.file }}
+          if-no-files-found: error

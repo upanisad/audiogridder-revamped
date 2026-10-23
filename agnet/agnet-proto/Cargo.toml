@@ -1,0 +1,14 @@
+[package]
+name = "agnet-proto"
+description = "AudioGridder revamped: frame, messaggi e layout del frame audio (nessun I/O)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+serde.workspace = true
+rmp-serde.workspace = true
+thiserror.workspace = true

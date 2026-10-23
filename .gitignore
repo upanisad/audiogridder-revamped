@@ -25,3 +25,9 @@ suppress-win.txt
 .idea
 cmake-build-*
 audiogridder-deps
+
+# Build locali (Windows / Visual Studio)
+.vs/
+ag-deps/
+build/
+out/

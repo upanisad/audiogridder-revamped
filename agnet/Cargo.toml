@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["agnet-proto", "agnet-transport", "agnet-session", "agnet-ffi", "agnet-tool"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# Versione minima di Rust supportata (vedi anche rust-toolchain.toml)
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+repository = "https://github.com/upanisad/audiogridder-revamped"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+rtrb = "0.3"
+assert_no_alloc = "1"
+socket2 = { version = "0.5", features = ["all"] }
+agnet-proto = { path = "agnet-proto" }
+agnet-transport = { path = "agnet-transport" }
+agnet-session = { path = "agnet-session" }
+
+[profile.release]
+lto = "thin"
+panic = "unwind" # i panic vengono intercettati al confine FFI
