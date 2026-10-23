@@ -14,6 +14,7 @@ repository = "https://github.com/upanisad/audiogridder-revamped"
 serde = { version = "1", features = ["derive"] }
 rmp-serde = "1"
 thiserror = "2"
+socket2 = { version = "0.5", features = ["all"] }
 agnet-proto = { path = "agnet-proto" }
 agnet-transport = { path = "agnet-transport" }
 agnet-session = { path = "agnet-session" }
