@@ -12,3 +12,7 @@ agnet-proto.workspace = true
 agnet-transport.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+rtrb.workspace = true
+
+[dev-dependencies]
+assert_no_alloc.workspace = true

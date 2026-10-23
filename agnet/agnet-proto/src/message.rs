@@ -165,6 +165,9 @@ pub struct Metrics {
     pub jitter_us: u32,
     pub buffer_blocks: u16,
     pub dropouts: u32,
+    /// Ritardo in uso (D, in blocchi) e quello che i dati misurati consigliano.
+    pub delay_blocks: u16,
+    pub recommended_delay_blocks: u16,
     /// `false` se il sistema ha negato la priorità realtime (ripiego a priorità normale).
     pub realtime_priority: bool,
 }
@@ -366,6 +369,8 @@ mod tests {
             jitter_us: 50,
             buffer_blocks: 2,
             dropouts: 0,
+            delay_blocks: 2,
+            recommended_delay_blocks: 1,
             realtime_priority: false,
         }));
     }

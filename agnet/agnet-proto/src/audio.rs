@@ -157,9 +157,22 @@ pub fn encode_block<S: Sample>(
     midi: &[MidiEvent<'_>],
     out: &mut Vec<u8>,
 ) -> Result<()> {
+    encode_block_with(header, samples, midi.len(), midi.iter().copied(), out)
+}
+
+/// Come `encode_block`, ma con gli eventi MIDI da un iteratore di cui si dichiara
+/// il numero (`midi_count`): permette di codificare da buffer propri senza
+/// costruire una lista intermedia.
+pub fn encode_block_with<'a, S: Sample>(
+    header: &AudioHeader,
+    samples: &[S],
+    midi_count: usize,
+    midi: impl Iterator<Item = MidiEvent<'a>>,
+    out: &mut Vec<u8>,
+) -> Result<()> {
     let mut h = *header;
     h.precision = S::PRECISION;
-    h.num_midi = u16::try_from(midi.len()).map_err(|_| ProtoError::BadBlockSize)?;
+    h.num_midi = u16::try_from(midi_count).map_err(|_| ProtoError::BadBlockSize)?;
     if samples.len() != h.total_samples() {
         return Err(ProtoError::BadBufferSize);
     }
@@ -172,11 +185,16 @@ pub fn encode_block<S: Sample>(
     {
         s.write_le(chunk);
     }
+    let mut written = 0usize;
     for ev in midi {
         let len = u16::try_from(ev.data.len()).map_err(|_| ProtoError::BadBlockSize)?;
         out.extend_from_slice(&ev.offset.to_le_bytes());
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(ev.data);
+        written += 1;
+    }
+    if written != midi_count {
+        return Err(ProtoError::BadBlockSize);
     }
     Ok(())
 }

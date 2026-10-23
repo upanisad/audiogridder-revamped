@@ -1,6 +1,8 @@
 //! Sessione: handshake, versioning, heartbeat, riconnessione con ripresa,
-//! errori tipizzati. Jitter buffer e metriche arrivano allo step 2.5.
+//! errori tipizzati, e (modulo `audio`) il percorso audio con jitter buffer,
+//! occultamento dei buchi e metriche.
 
+pub mod audio;
 pub mod client;
 pub mod error;
 pub mod handshake;
