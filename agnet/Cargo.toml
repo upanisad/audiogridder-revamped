@@ -11,6 +11,9 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/upanisad/audiogridder-revamped"
 
 [workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1"
+thiserror = "2"
 agnet-proto = { path = "agnet-proto" }
 agnet-transport = { path = "agnet-transport" }
 agnet-session = { path = "agnet-session" }

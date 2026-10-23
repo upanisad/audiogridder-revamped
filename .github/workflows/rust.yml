@@ -38,3 +38,19 @@ jobs:
         run: cargo build --workspace --release
       - name: Test
         run: cargo test --workspace
+
+  fuzz:
+    name: Fuzz agnet-proto
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: Fuzz (30 s per target)
+        working-directory: agnet/agnet-proto
+        run: |
+          for t in frame message audio; do
+            cargo +nightly fuzz run $t -- -max_total_time=30
+          done
